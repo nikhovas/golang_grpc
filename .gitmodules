@@ -1,3 +1,6 @@
 [submodule "2024_autumn/week2/contrib/googleapis"]
 	path = 2024_autumn/week2/contrib/googleapis
 	url = https://github.com/googleapis/googleapis
+[submodule "2024_autumn/week2_3/contrib/grpc-gateway"]
+	path = 2024_autumn/week2_3/contrib/grpc-gateway
+	url = https://github.com/grpc-ecosystem/grpc-gateway.git
