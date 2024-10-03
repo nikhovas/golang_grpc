@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package grpc_course;
+
+import "google/api/annotations.proto";
+import "google/type/latlng.proto";
+
+option go_package = "github.com/nikhovas/grpc_course/api";
+
+service CalcServer {
+    rpc CalcDistance(CalcDistanceReq) returns (CalcDistanceRsp) {
+        // option (google.api.http) = {
+        //     get: "/calc-distance"
+        // };
+
+        option (google.api.http) = {
+            post: "/calc-distance"
+            body: "*"
+        };
+    }
+}
+
+message CalcDistanceReq {
+    google.type.LatLng first = 1;
+    google.type.LatLng second = 2;
+}
+
+message CalcDistanceRsp {
+    double distance = 1;
+}
