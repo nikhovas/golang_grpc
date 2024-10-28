@@ -11,8 +11,13 @@ import (
 	"net"
 	"net/http"
 
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	api "github.com/nikhovas/grpc_course/api"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -21,6 +26,9 @@ import (
 
 type CalcServer struct {
 	api.UnimplementedCalcServerServer
+	Logger        *zap.Logger
+	SimpleCounter *prometheus.CounterVec
+	Histogram     *prometheus.HistogramVec
 }
 
 func (s *CalcServer) CalcDistance(
@@ -37,8 +45,17 @@ func (s *CalcServer) CalcDistance(
 
 	a := math.Pow(req.First.Latitude-req.Second.Latitude, 2.0)
 	b := math.Pow(req.First.Longitude-req.Second.Longitude, 2.0)
+
+	res := math.Sqrt(a + b)
+	s.Logger.Info("Result", zap.Float64("value", res))
+	err := errors.New("some error")
+	s.Logger.Error("Error while calculating", zap.Error(err))
+
+	s.SimpleCounter.WithLabelValues(authData[0]).Inc()
+	s.Histogram.WithLabelValues("demo").Observe(res)
+
 	return &api.CalcDistanceRsp{
-		Distance: math.Sqrt(a + b),
+		Distance: res,
 	}, nil
 }
 
@@ -49,15 +66,57 @@ var swaggerData []byte
 var swaggerFiles embed.FS
 
 func main() {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
+	counter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "simple_counter",
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(counter)
+
+	counter2 := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "histogram_counter",
+			Buckets: []float64{0, 10.0, 20.0, 30.0},
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(counter2)
+
+	go func() {
+		server := &http.Server{
+			Addr:    ":9000",
+			Handler: promhttp.Handler(),
+		}
+
+		log.Println("Serving metrics on http://0.0.0.0:9000")
+		log.Fatalln(server.ListenAndServe())
+	}()
+
 	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := &CalcServer{}
+	s := &CalcServer{
+		Logger:        logger,
+		SimpleCounter: counter,
+		Histogram:     counter2,
+	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			grpc_zap.UnaryServerInterceptor(logger),
+			grpc_prometheus.UnaryServerInterceptor,
+		),
+	)
 	api.RegisterCalcServerServer(grpcServer, s)
 	reflection.Register(grpcServer)
 
