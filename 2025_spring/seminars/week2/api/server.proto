@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package grpc_course;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/nikhovas/grpc_course/api";
+
+service CalcServer {
+    rpc Add(AddReq) returns (AddRsp) {
+        option (google.api.http) = {
+            post: "/add"
+            body: "temp"
+        };
+    };
+
+    rpc Add2(AddReq2) returns (AddRsp) {
+        option (google.api.http) = {
+            post: "/add2"
+            body: "*"
+        };
+    };
+}
+
+message Temp {
+    string data = 1;
+}
+
+message AddReq {
+    int32 a = 1;
+    int32 b = 2;
+    Temp temp = 3;
+}
+
+message AddReq2 {
+    repeated int32 values = 1;
+}
+
+message AddRsp {
+    int32 result = 1;
+}
