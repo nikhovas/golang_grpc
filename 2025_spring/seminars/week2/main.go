@@ -9,8 +9,13 @@ import (
 	"net"
 	"net/http"
 
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/nikhovas/grpc_course/api"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,11 +26,18 @@ import (
 
 type ABA struct {
 	api.UnimplementedCalcServerServer
+	Logger        *zap.Logger
+	SimpleCounter *prometheus.CounterVec
+	Histogram     *prometheus.HistogramVec
 }
 
 func (c *ABA) Add(ctx context.Context, req *api.AddReq) (*api.AddRsp, error) {
 	fmt.Println(req.Temp.Data)
-	return &api.AddRsp{Result: req.A + req.B}, nil
+	result := req.A + req.B
+	c.Logger.Info("Result", zap.Int32("val", result))
+	c.SimpleCounter.WithLabelValues("meta").Inc()
+	c.Histogram.WithLabelValues("meta").Observe(float64(result))
+	return &api.AddRsp{Result: result}, nil
 }
 
 func (c *ABA) Add2(ctx context.Context, req *api.AddReq2) (*api.AddRsp, error) {
@@ -58,15 +70,52 @@ var swaggerData []byte
 var swaggerFiles embed.FS
 
 func main() {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
+	counter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "simple_counter",
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(counter)
+
+	counter2 := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "historogram_metric",
+			Buckets: []float64{0, 10.0, 20.0, 30.0},
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(counter2)
+
+	go func() {
+		server := &http.Server{
+			Addr:    ":9000",
+			Handler: promhttp.Handler(),
+		}
+
+		log.Fatalln(server.ListenAndServe())
+	}()
+
 	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			grpc_zap.UnaryServerInterceptor(logger),
+			grpc_prometheus.UnaryServerInterceptor,
+		),
+	)
 
-	c := ABA{}
+	c := ABA{Logger: logger, SimpleCounter: counter, Histogram: counter2}
 
 	api.RegisterCalcServerServer(grpcServer, &c)
 	reflection.Register(grpcServer)
