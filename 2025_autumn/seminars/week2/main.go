@@ -10,6 +10,10 @@ import (
 	"net"
 	"net/http"
 
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
@@ -20,6 +24,9 @@ import (
 
 type CalcServer struct {
 	api.UnimplementedCalcServiceServer
+	Logger    *zap.Logger
+	Counter   *prometheus.CounterVec
+	Histogram *prometheus.HistogramVec
 }
 
 func (cs *CalcServer) CalcDistance(ctx context.Context, req *api.CalcDistanceReq) (*api.CalcDistanceRsp, error) {
@@ -37,6 +44,10 @@ func (cs *CalcServer) CalcDistance(ctx context.Context, req *api.CalcDistanceReq
 	// 	fmt.Println(authData[0])
 	// }
 
+	cs.Logger.Info("Distance", zap.Float64("result", res))
+	cs.Counter.WithLabelValues("meta").Inc()
+	cs.Histogram.WithLabelValues("meta").Observe(res)
+
 	return &api.CalcDistanceRsp{
 		Distance: res,
 	}, nil
@@ -49,9 +60,49 @@ var swaggerData []byte
 var swaggerFiles embed.FS
 
 func main() {
-	cs := &CalcServer{}
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
 
-	grpcServer := grpc.NewServer()
+	counter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "simple_counter",
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(counter)
+
+	histogram := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "histogram",
+			Buckets: []float64{0, 10.0, 20.0, 50.0},
+		},
+		[]string{"label"},
+	)
+	prometheus.MustRegister(histogram)
+
+	go func() {
+		server := &http.Server{
+			Addr:    ":9000",
+			Handler: promhttp.Handler(),
+		}
+
+		err := server.ListenAndServe()
+		if err != nil {
+			logger.Fatal("Error while running metrics server", zap.Error(err))
+		}
+	}()
+
+	cs := &CalcServer{Logger: logger, Counter: counter, Histogram: histogram}
+
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			grpc_zap.UnaryServerInterceptor(logger),
+			// grpc_prometheus.UnaryServerInterceptor,
+		),
+	)
 	api.RegisterCalcServiceServer(grpcServer, cs)
 	reflection.Register(grpcServer)
 
