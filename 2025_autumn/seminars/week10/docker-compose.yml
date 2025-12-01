@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  grpc-server:
+    build: ./server
+    ports:
+      - 50051:50051
+    environment:
+      - REDIS_URL=redis:6379
+    depends_on:
+      - redis
+    networks:
+      - grpc-network
+
+  envoy:
+    image: envoyproxy/envoy:v1.28-latest
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml
+    ports:
+      - "8080:8080"
+      - "9901:9901"
+    depends_on:
+      - grpc-server
+    networks:
+      - grpc-network
+
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_ENVOY_URL=http://localhost:8080
+    depends_on:
+      - envoy
+    networks:
+      - grpc-network
+    volumes:
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+
+  redis:
+    image: redis:latest
+    volumes:
+      - ./server/db-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 1s
+      retries: 5
+      start_period: 5s
+    networks:
+      - grpc-network
+
+networks:
+  grpc-network:
+    driver: bridge
