@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  grpc-server:
+    build: ./
+    ports:
+      - 50051:50051
+    environment:
+      - REDIS_URL=redis:6379
+    depends_on:
+      - redis
+  
+  redis:
+    image: redis:latest
+    volumes:
+      - ./db-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 2s

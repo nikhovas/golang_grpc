@@ -13,3 +13,6 @@
 [submodule "2025_autumn/seminars/week2/contrib/googleapis"]
 	path = 2025_autumn/seminars/week2/contrib/googleapis
 	url = https://github.com/googleapis/googleapis
+[submodule "2026_spring/seminars/week2/contrib/googleapis"]
+	path = 2026_spring/seminars/week2/contrib/googleapis
+	url = https://github.com/googleapis/googleapis

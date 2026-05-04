@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package grpc_course;
+
+option go_package = "github.com/nikhovas/grpc_course/api";
+
+import "google/api/annotations.proto";
+
+service CalcService {
+    rpc Add(AddReq) returns (AddRsp) {
+        option (google.api.http) = {
+            post: "/add"
+            body: "*"
+        };
+    }
+}
+
+message AddReq {
+    int64 a = 1;
+    int64 b = 2;
+}
+
+message AddRsp {
+    int64 sum = 1;
+}
